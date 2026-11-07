@@ -1,5 +1,8 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pathlib import Path
 
+upload_dir: Path = Path("data/uploads")
+max_upload_size_mb: int = 10
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(

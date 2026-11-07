@@ -6,6 +6,7 @@ from sqlalchemy import text
 from app.db.database import engine
 
 from app.api.applications import router as applications_router
+from app.api.documents import router as documents_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -30,6 +31,10 @@ app = FastAPI(
 
 app.include_router(
     applications_router,
+    prefix="/api/v1",
+)
+app.include_router(
+    documents_router,
     prefix="/api/v1",
 )
 
