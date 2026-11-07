@@ -1,0 +1,18 @@
+[project]
+name = "loan-underwriting"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "alembic>=1.20.1",
+    "fastapi>=0.162.0",
+    "langchain>=1.4.9",
+    "langchain-google-genai>=4.4.3",
+    "langgraph>=1.2.20",
+    "psycopg[binary]>=3.3.8",
+    "pydantic-settings>=2.16.2",
+    "pymupdf>=2.1",
+    "python-dotenv>=1.2.4",
+    "python-multipart>=0.0.33",
+    "sqlalchemy>=2.1.8",
+    "uvicorn[standard]>=0.54.0",
+]
