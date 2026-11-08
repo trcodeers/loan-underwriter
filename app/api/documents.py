@@ -23,7 +23,7 @@ from app.schemas.document import (
 from app.services.pdf_extraction import extract_pdf_text
 
 from app.schemas.document import DocumentExtractionResponse
-
+from app.models.extraction import DocumentExtraction
 
 
 from sqlalchemy import select
@@ -256,7 +256,6 @@ def extract_document(
     
        
     
-    
 @router.post(
     "/{application_id}/documents/{document_id}/analyze-payslip",
     response_model=PayslipExtractionResponse,
@@ -266,7 +265,7 @@ def analyze_payslip(
     document_id: int,
     db: Session = Depends(get_db),
 ):
-    # Find document belonging to this application
+    # 1. Find document
     statement = select(Document).where(
         Document.id == document_id,
         Document.application_id == application_id,
@@ -280,35 +279,63 @@ def analyze_payslip(
     if document.document_type != "payslip":
         raise HTTPException(400, "Document is not a payslip")
 
-    # Extract text from PDF
+    # 2. Check whether extraction already exists
+    statement = select(DocumentExtraction).where(
+        DocumentExtraction.document_id == document_id,
+        DocumentExtraction.extraction_type == "payslip",
+    )
+
+    existing_extraction = db.scalar(statement)
+
+    if existing_extraction:
+        return PayslipExtractionResponse(
+            document_id=document.id,
+            application_id=document.application_id,
+            original_filename=document.original_filename,
+            **existing_extraction.extracted_data,
+        )
+
+    # 3. Extract PDF text
     pdf_result = extract_pdf_text(document.storage_path)
 
     if not pdf_result["has_extractable_text"]:
         raise HTTPException(
             422,
-            "No readable text found. Scanned PDFs require OCR.",
+            "No readable text found in PDF",
         )
 
-    # Extract structured financial information using LLM
+    # 4. Extract financial information using LLM
     try:
         result = extract_payslip_data(
             pdf_result["extracted_text"]
         )
+
+        extracted_data = result.model_dump(mode="json")
+
     except Exception as exc:
         logger.exception("Payslip extraction failed")
 
         raise HTTPException(
-            status_code=502,
-            detail=f"AI extraction failed: {type(exc).__name__}: {exc}",
+            502,
+            "Payslip AI extraction failed",
         ) from exc
-    
+
+    # 5. Save extraction result in database
+    extraction = DocumentExtraction(
+        document_id=document.id,
+        extraction_type="payslip",
+        extracted_data=extracted_data,
+    )
+
+    db.add(extraction)
+    db.commit()
+    db.refresh(extraction)
+
+    # 6. Return extracted information
     return PayslipExtractionResponse(
         document_id=document.id,
         application_id=document.application_id,
         original_filename=document.original_filename,
-        **result.model_dump(),
-    )
-    
-    
-    
+        **extracted_data,
+    )   
     
