@@ -20,7 +20,9 @@ from app.schemas.document import (
     ChecklistItem,
     DocumentChecklistResponse,
 )
+from app.services.pdf_extraction import extract_pdf_text
 
+from app.schemas.document import DocumentExtractionResponse
 
 router = APIRouter(
     prefix="/applications",
@@ -190,5 +192,55 @@ def get_document_checklist(
         items=items,
     )
     
+    
+   
+   
+@router.post(
+    "/{application_id}/documents/{document_id}/extract",
+    response_model=DocumentExtractionResponse,
+)
+def extract_document(
+    application_id: int,
+    document_id: int,
+    db: Session = Depends(get_db),
+):
+    # Find the document and verify its application
+    statement = select(Document).where(
+        Document.id == document_id,
+        Document.application_id == application_id,
+    )
+
+    document = db.scalar(statement)
+
+    if not document:
+        raise HTTPException(
+            status_code=404,
+            detail="Document not found",
+        )
+
+    try:
+        result = extract_pdf_text(document.storage_path)
+        print(f"Extracted text from document {document_id}: {result['extracted_text']}")  # Log first 100 chars
+
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail="PDF file not found in storage",
+        )
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        )
+
+    return DocumentExtractionResponse(
+        document_id=document.id,
+        application_id=document.application_id,
+        original_filename=document.original_filename,
+        **result,
+    )
+    
+       
     
     

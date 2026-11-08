@@ -26,3 +26,20 @@ class DocumentChecklistResponse(BaseModel):
     application_id: int
     ready_for_analysis: bool
     items: list[ChecklistItem]
+    
+    
+    
+    
+    
+    
+class DocumentExtractionResponse(BaseModel):
+    document_id: int
+    application_id: int
+    original_filename: str
+    page_count: int
+    has_extractable_text: bool
+    extracted_text: str
+    
+    
+        
+    
