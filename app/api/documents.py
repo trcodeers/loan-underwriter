@@ -15,7 +15,7 @@ from app.models.application import LoanApplication
 from app.models.document import Document
 from app.schemas.document import DocumentResponse
 from app.services.document_service import save_document
-
+from sqlalchemy import select
 
 router = APIRouter(
     prefix="/applications",
@@ -93,3 +93,28 @@ async def upload_document(
         )
 
     return document
+
+
+@router.get(
+    "/{application_id}/documents",
+    response_model=list[DocumentResponse],
+)
+def get_documents(
+    application_id: int,
+    db: Session = Depends(get_db),
+):
+    application = db.get(LoanApplication, application_id)
+
+    if not application:
+        raise HTTPException(
+            status_code=404,
+            detail="Loan application not found",
+        )
+
+    statement = (
+        select(Document)
+        .where(Document.application_id == application_id)
+        .order_by(Document.created_at.desc())
+    )
+
+    return db.scalars(statement).all()

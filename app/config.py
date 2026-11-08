@@ -1,8 +1,7 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pathlib import Path
 
-upload_dir: Path = Path("data/uploads")
-max_upload_size_mb: int = 10
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -12,5 +11,8 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite:///./data/loan_underwriting.db"
 
-
+    upload_dir: Path = Path("data/uploads")
+    max_upload_size_mb: int = 10
+    
+    
 settings = Settings()
