@@ -121,6 +121,23 @@ With the server running, open:
 
 Use Swagger UI to try the available endpoints.
 
+### Test bank statement extraction
+
+1. Use `POST /api/v1/applications/` to create an application, or use an existing application ID.
+2. Use `POST /api/v1/applications/{application_id}/documents` to upload a PDF with `document_type` set to `bank_statement`.
+3. Use the returned document ID with `POST /api/v1/applications/{application_id}/documents/{document_id}/analyze-bank-statement`.
+4. Review the response for bank details and transactions. Account numbers are limited to their last four digits; unavailable values should be `null`.
+5. Repeat the analysis request to exercise the cached result. Confirm the saved record locally with (replace `<document_id>` with the uploaded document ID):
+
+   ```sql
+   SELECT document_id, extraction_type, extracted_data
+   FROM document_extractions
+   WHERE document_id = <document_id>
+     AND extraction_type = 'bank_statement';
+   ```
+
+The endpoint returns the saved extraction on subsequent requests rather than invoking the model again. The existing payslip endpoint, `POST /api/v1/applications/{application_id}/documents/{document_id}/analyze-payslip`, remains available.
+
 ## 9. Project structure
 
 The backend uses a deliberately small structure:

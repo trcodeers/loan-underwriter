@@ -32,6 +32,13 @@ from app.models.document import Document
 from app.schemas.financial import PayslipExtractionResponse
 from app.services.pdf_extraction import extract_pdf_text
 from app.services.payslip_extraction import extract_payslip_data
+from app.schemas.bank_statement import (
+    BankStatementExtraction,
+    BankStatementExtractionResponse,
+)
+from app.services.bank_statement_extraction import (
+    extract_bank_statement_data,
+)
 
 import logging
 
@@ -337,5 +344,88 @@ def analyze_payslip(
         application_id=document.application_id,
         original_filename=document.original_filename,
         **extracted_data,
-    )   
+    )
+
+
+@router.post(
+    "/{application_id}/documents/{document_id}/analyze-bank-statement",
+    response_model=BankStatementExtractionResponse,
+)
+def analyze_bank_statement(
+    application_id: int,
+    document_id: int,
+    db: Session = Depends(get_db),
+):
+    application = db.get(LoanApplication, application_id)
+
+    if not application:
+        raise HTTPException(404, "Loan application not found")
+
+    statement = select(Document).where(
+        Document.id == document_id,
+        Document.application_id == application_id,
+    )
+    document = db.scalar(statement)
+
+    if not document:
+        raise HTTPException(404, "Document not found")
+
+    if document.document_type != "bank_statement":
+        raise HTTPException(400, "Document is not a bank statement")
+
+    statement = select(DocumentExtraction).where(
+        DocumentExtraction.document_id == document_id,
+        DocumentExtraction.extraction_type == "bank_statement",
+    )
+    existing_extraction = db.scalar(statement)
+
+    if existing_extraction:
+        return BankStatementExtractionResponse(
+            document_id=document.id,
+            application_id=document.application_id,
+            original_filename=document.original_filename,
+            **existing_extraction.extracted_data,
+        )
+
+    try:
+        pdf_result = extract_pdf_text(document.storage_path)
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(
+            422,
+            "Unable to read text from the PDF document",
+        ) from exc
+
+    if not pdf_result["has_extractable_text"]:
+        raise HTTPException(422, "No readable text found in PDF")
+
+    try:
+        result = extract_bank_statement_data(pdf_result["extracted_text"])
+        validated_result = BankStatementExtraction.model_validate(result)
+        extracted_data = validated_result.model_dump(mode="json")
+    except Exception as exc:
+        logger.error(
+            "Bank statement extraction failed (%s)",
+            type(exc).__name__,
+            stack_info=True,
+        )
+        raise HTTPException(
+            502,
+            "Bank statement AI extraction failed",
+        ) from exc
+
+    extraction = DocumentExtraction(
+        document_id=document.id,
+        extraction_type="bank_statement",
+        extracted_data=extracted_data,
+    )
+    db.add(extraction)
+    db.commit()
+    db.refresh(extraction)
+
+    return BankStatementExtractionResponse(
+        document_id=document.id,
+        application_id=document.application_id,
+        original_filename=document.original_filename,
+        **extracted_data,
+    )
     
