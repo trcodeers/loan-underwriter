@@ -16,6 +16,11 @@ from app.models.document import Document
 from app.schemas.document import DocumentResponse
 from app.services.document_service import save_document
 from sqlalchemy import select
+from app.schemas.document import (
+    ChecklistItem,
+    DocumentChecklistResponse,
+)
+
 
 router = APIRouter(
     prefix="/applications",
@@ -118,3 +123,72 @@ def get_documents(
     )
 
     return db.scalars(statement).all()
+
+
+
+
+
+
+@router.get(
+    "/{application_id}/documents/checklist",
+    response_model=DocumentChecklistResponse,
+)
+def get_document_checklist(
+    application_id: int,
+    db: Session = Depends(get_db),
+):
+    # Check whether application exists
+    application = db.get(LoanApplication, application_id)
+
+    if not application:
+        raise HTTPException(
+            status_code=404,
+            detail="Loan application not found",
+        )
+
+    # Fetch uploaded documents
+    statement = select(Document).where(
+        Document.application_id == application_id
+    )
+
+    documents = db.scalars(statement).all()
+
+    # Define document requirements
+    requirements = [
+        ("payslip", "Payslips (last 3 months)", True),
+        ("bank_statement", "Bank statements (last 6 months)", True),
+        ("existing_loan_statement", "Existing loan statements", False),
+    ]
+
+    items = []
+
+    for document_type, label, required in requirements:
+        count = sum(
+            1 for doc in documents
+            if doc.document_type == document_type
+        )
+
+        items.append(
+            ChecklistItem(
+                document_type=document_type,
+                label=label,
+                required=required,
+                uploaded=count > 0,
+                document_count=count,
+            )
+        )
+
+    ready = all(
+        item.uploaded
+        for item in items
+        if item.required
+    )
+
+    return DocumentChecklistResponse(
+        application_id=application_id,
+        ready_for_analysis=ready,
+        items=items,
+    )
+    
+    
+    
