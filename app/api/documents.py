@@ -33,7 +33,9 @@ from app.schemas.financial import PayslipExtractionResponse
 from app.services.pdf_extraction import extract_pdf_text
 from app.services.payslip_extraction import extract_payslip_data
 
+import logging
 
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/applications",
@@ -293,16 +295,20 @@ def analyze_payslip(
             pdf_result["extracted_text"]
         )
     except Exception as exc:
-        raise HTTPException(
-            502,
-            "AI extraction failed. Check model configuration and provider logs.",
-        ) from exc
+        logger.exception("Payslip extraction failed")
 
+        raise HTTPException(
+            status_code=502,
+            detail=f"AI extraction failed: {type(exc).__name__}: {exc}",
+        ) from exc
+    
     return PayslipExtractionResponse(
         document_id=document.id,
         application_id=document.application_id,
         original_filename=document.original_filename,
         **result.model_dump(),
     )
+    
+    
     
     
