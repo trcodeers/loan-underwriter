@@ -24,6 +24,17 @@ from app.services.pdf_extraction import extract_pdf_text
 
 from app.schemas.document import DocumentExtractionResponse
 
+
+
+from sqlalchemy import select
+
+from app.models.document import Document
+from app.schemas.financial import PayslipExtractionResponse
+from app.services.pdf_extraction import extract_pdf_text
+from app.services.payslip_extraction import extract_payslip_data
+
+
+
 router = APIRouter(
     prefix="/applications",
     tags=["Documents"],
@@ -242,5 +253,56 @@ def extract_document(
     )
     
        
+    
+    
+@router.post(
+    "/{application_id}/documents/{document_id}/analyze-payslip",
+    response_model=PayslipExtractionResponse,
+)
+def analyze_payslip(
+    application_id: int,
+    document_id: int,
+    db: Session = Depends(get_db),
+):
+    # Find document belonging to this application
+    statement = select(Document).where(
+        Document.id == document_id,
+        Document.application_id == application_id,
+    )
+
+    document = db.scalar(statement)
+
+    if not document:
+        raise HTTPException(404, "Document not found")
+
+    if document.document_type != "payslip":
+        raise HTTPException(400, "Document is not a payslip")
+
+    # Extract text from PDF
+    pdf_result = extract_pdf_text(document.storage_path)
+
+    if not pdf_result["has_extractable_text"]:
+        raise HTTPException(
+            422,
+            "No readable text found. Scanned PDFs require OCR.",
+        )
+
+    # Extract structured financial information using LLM
+    try:
+        result = extract_payslip_data(
+            pdf_result["extracted_text"]
+        )
+    except Exception as exc:
+        raise HTTPException(
+            502,
+            "AI extraction failed. Check model configuration and provider logs.",
+        ) from exc
+
+    return PayslipExtractionResponse(
+        document_id=document.id,
+        application_id=document.application_id,
+        original_filename=document.original_filename,
+        **result.model_dump(),
+    )
     
     
