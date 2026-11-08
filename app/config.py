@@ -5,8 +5,8 @@ from pydantic import SecretStr
 
 class Settings(BaseSettings):
 
-    llm_provider: str = "google-genai"
-    llm_model: str = "gemini-3.8-flash"
+    llm_provider: str 
+    llm_model: str
     llm_api_key: SecretStr | None = None
 
     model_config = SettingsConfigDict(
