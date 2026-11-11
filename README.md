@@ -318,6 +318,19 @@ The development server is available at:
 
 The application startup check verifies database connectivity. Table creation and schema updates are performed through Alembic migrations, not automatically by starting FastAPI.
 
+### Verify payslip and bank statement
+
+Use the existing document extraction endpoints in Swagger (`/docs`) to extract and save one payslip and one bank statement for the same application:
+
+- `POST /api/v1/applications/{application_id}/documents/{document_id}/analyze-payslip`
+- `POST /api/v1/applications/{application_id}/documents/{document_id}/analyze-bank-statement`
+
+Then call `POST /api/v1/applications/{application_id}/verify-finances`. The response compares the saved extractions, reports salary and name findings, and checks transaction totals, statement balance reconciliation, and available running balances. It uses the most recently uploaded document of each type that has a matching saved extraction. Missing extraction data returns `422`; an unknown application returns `404`.
+
+The verification uses deterministic Python logic and does not call an LLM or make a lending decision. Salary amounts are not treated as salary evidence on their own when the transaction description does not support that identification.
+
+The bank-statement `total_credits` and `total_debits` findings compare the sums of transaction rows against the totals explicitly extracted from the statement summary. The extraction prompt does not ask the model to calculate statement totals. If those summary totals are not printed or extracted, the corresponding check is `needs_review`. To regenerate a bank-statement extraction in Swagger without re-uploading its PDF, call the analyze-bank-statement endpoint again with `force_refresh=true`; cached records predating the summary-total fields are refreshed automatically.
+
 ## 12. Planned AI Investigation Workflow
 
 The following is the intended AI workflow. It is a roadmap, not a claim that all these capabilities are already implemented.

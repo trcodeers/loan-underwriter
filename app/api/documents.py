@@ -4,6 +4,7 @@ from fastapi import (
     File,
     Form,
     HTTPException,
+    Query,
     UploadFile,
     status,
 )
@@ -354,6 +355,13 @@ def analyze_payslip(
 def analyze_bank_statement(
     application_id: int,
     document_id: int,
+    force_refresh: bool = Query(
+        default=False,
+        description=(
+            "Re-extract and replace the saved bank-statement extraction "
+            "without deleting the uploaded document."
+        ),
+    ),
     db: Session = Depends(get_db),
 ):
     application = db.get(LoanApplication, application_id)
@@ -379,7 +387,16 @@ def analyze_bank_statement(
     )
     existing_extraction = db.scalar(statement)
 
-    if existing_extraction:
+    is_legacy_extraction = (
+        existing_extraction is not None
+        and (
+            "statement_total_credits"
+            not in existing_extraction.extracted_data
+            or "statement_total_debits"
+            not in existing_extraction.extracted_data
+        )
+    )
+    if existing_extraction and not force_refresh and not is_legacy_extraction:
         return BankStatementExtractionResponse(
             document_id=document.id,
             application_id=document.application_id,
@@ -413,14 +430,20 @@ def analyze_bank_statement(
             "Bank statement AI extraction failed",
         ) from exc
 
-    extraction = DocumentExtraction(
-        document_id=document.id,
-        extraction_type="bank_statement",
-        extracted_data=extracted_data,
-    )
-    db.add(extraction)
+    if existing_extraction:
+        existing_extraction.extracted_data = extracted_data
+    else:
+        extraction = DocumentExtraction(
+            document_id=document.id,
+            extraction_type="bank_statement",
+            extracted_data=extracted_data,
+        )
+        db.add(extraction)
     db.commit()
-    db.refresh(extraction)
+    if existing_extraction:
+        db.refresh(existing_extraction)
+    else:
+        db.refresh(extraction)
 
     return BankStatementExtractionResponse(
         document_id=document.id,

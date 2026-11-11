@@ -13,6 +13,14 @@ class BankTransaction(BaseModel):
 
 
 class BankStatementExtraction(BaseModel):
+    statement_total_credits: Decimal | None = Field(
+        default=None,
+        description="Total credits explicitly reported in the statement summary",
+    )
+    statement_total_debits: Decimal | None = Field(
+        default=None,
+        description="Total debits explicitly reported in the statement summary",
+    )
     account_holder_name: str | None = None
     bank_name: str | None = None
     account_number_last4: str | None = None

@@ -11,6 +11,12 @@ from fastapi import HTTPException
 
 from app.schemas.application import ApplicationResponse
 
+from app.schemas.verification import FinancialVerificationResponse
+from app.services.financial_verification import (
+    FinancialVerificationDataUnavailable,
+    verify_application_finances,
+)
+
 router = APIRouter(
     prefix="/applications",
     tags=["Applications"],
@@ -60,6 +66,30 @@ def get_application(
         )
 
     return application
+
+
+@router.post(
+    "/{application_id}/verify-finances",
+    response_model=FinancialVerificationResponse,
+)
+def verify_finances(
+    application_id: int,
+    db: Session = Depends(get_db),
+):
+    application = db.get(LoanApplication, application_id)
+    if not application:
+        raise HTTPException(
+            status_code=404,
+            detail="Loan application not found",
+        )
+
+    try:
+        return verify_application_finances(db, application_id)
+    except FinancialVerificationDataUnavailable as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=str(exc),
+        ) from exc
 
 
 

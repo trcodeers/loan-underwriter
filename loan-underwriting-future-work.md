@@ -3,7 +3,7 @@
 
 > **Purpose of this document:** Preserve the project's context and implementation plan so development can resume later, even in a new ChatGPT conversation or after this chat history is deleted.
 >
-> **Project status:** Backend MVP in development. Core application and document workflows exist. Payslip and bank-statement extraction have both been exercised successfully with synthetic PDFs. Cross-document verification and the underwriting workflow are not implemented yet.
+> **Project status:** Backend MVP in development. Core application and document workflows exist. Payslip and bank-statement extraction have both been exercised successfully with synthetic PDFs. Deterministic cross-document verification is implemented; the broader underwriting workflow is not.
 
 ---
 
@@ -396,7 +396,6 @@ A uniqueness constraint was intended on `(document_id, extraction_type)` so the 
 
 The project is not yet a full underwriting agent. In particular, these capabilities remain future work:
 
-- Deterministic cross-document verification.
 - Transaction categorization/classification.
 - Existing loan statement extraction.
 - Financial calculations and repayment capacity metrics.
@@ -418,7 +417,7 @@ Do not describe these capabilities as implemented until they actually exist and 
 
 Implement the following in order. Keep each feature small and test it before moving to the next one.
 
-### Step 1 — Cross-document financial verification
+### Step 1 — Cross-document financial verification (implemented)
 
 **Goal:** Compare saved payslip and bank-statement extractions belonging to the same loan application.
 
@@ -427,6 +426,8 @@ Create a deterministic service, suggested file:
 ```text
 app/services/financial_verification.py
 ```
+
+The API is available at `POST /api/v1/applications/{application_id}/verify-finances`. It uses the latest extracted payslip and bank statement associated with the application, compares salary/name/employer evidence, reconciles statement totals and balances using `Decimal`, and reports transaction running-balance inconsistencies. See the README's Swagger instructions. This feature does not classify all transactions or make lending decisions.
 
 Add a Pydantic schema for a finding with fields along these lines:
 
@@ -683,9 +684,9 @@ The UI should use conventional forms and upload controls for the standard workfl
 
 ## 8. Suggested next coding task when resuming
 
-**The immediate next feature is Step 1: deterministic cross-document financial verification.**
+**The immediate next feature is transaction categorization/classification, which remains separate from the implemented cross-document verification.**
 
-At the end of the previous session, the synthetic payslip and bank statement had both been extracted successfully. No cross-document comparison service had yet been implemented.
+The synthetic payslip and bank statement were extracted successfully. Deterministic cross-document verification now consumes those persisted extraction records; it does not rerun extraction.
 
 Start by inspecting the actual repository and confirming:
 
@@ -770,4 +771,4 @@ The first meaningful end-to-end MVP is complete when a loan officer can:
 
 The MVP should use synthetic data for demos and should not independently approve or reject loan applications.
 
-**Current stopping point:** Both payslip and bank-statement extraction have been tested successfully. The next task is cross-document financial verification. The frontend has not yet been started.
+**Current stopping point:** Payslip and bank-statement extraction and deterministic cross-document financial verification are implemented. The frontend has not yet been started.
