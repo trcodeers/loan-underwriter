@@ -36,9 +36,13 @@ from app.services.payslip_extraction import extract_payslip_data
 from app.schemas.bank_statement import (
     BankStatementExtraction,
     BankStatementExtractionResponse,
+    BankTransactionClassificationResponse,
 )
 from app.services.bank_statement_extraction import (
     extract_bank_statement_data,
+)
+from app.services.bank_transaction_classification import (
+    classify_bank_statement_transactions,
 )
 
 import logging
@@ -450,5 +454,52 @@ def analyze_bank_statement(
         application_id=document.application_id,
         original_filename=document.original_filename,
         **extracted_data,
+    )
+
+
+@router.post(
+    "/{application_id}/documents/{document_id}/classify-transactions",
+    response_model=BankTransactionClassificationResponse,
+)
+def classify_bank_statement(
+    application_id: int,
+    document_id: int,
+    db: Session = Depends(get_db),
+):
+    application = db.get(LoanApplication, application_id)
+    if not application:
+        raise HTTPException(404, "Loan application not found")
+
+    document = db.scalar(
+        select(Document).where(
+            Document.id == document_id,
+            Document.application_id == application_id,
+        )
+    )
+    if not document:
+        raise HTTPException(404, "Document not found")
+
+    if document.document_type != "bank_statement":
+        raise HTTPException(400, "Document is not a bank statement")
+
+    extraction = db.scalar(
+        select(DocumentExtraction).where(
+            DocumentExtraction.document_id == document_id,
+            DocumentExtraction.extraction_type == "bank_statement",
+        )
+    )
+    if not extraction:
+        raise HTTPException(
+            422,
+            "Bank statement extraction is unavailable; analyze the document first",
+        )
+
+    bank_statement = BankStatementExtraction.model_validate(
+        extraction.extracted_data
+    )
+    return BankTransactionClassificationResponse(
+        application_id=application_id,
+        document_id=document_id,
+        transactions=classify_bank_statement_transactions(bank_statement),
     )
     

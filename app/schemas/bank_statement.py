@@ -1,5 +1,6 @@
 import re
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -10,6 +11,34 @@ class BankTransaction(BaseModel):
     debit: Decimal | None = None
     credit: Decimal | None = None
     balance: Decimal | None = None
+
+
+TransactionCategory = Literal[
+    "salary",
+    "other_income",
+    "loan_emi",
+    "rent",
+    "utilities",
+    "groceries",
+    "shopping",
+    "healthcare",
+    "insurance",
+    "cash_withdrawal",
+    "internal_transfer",
+    "refund_or_reversal",
+    "other_uncertain",
+]
+
+
+class ClassifiedBankTransaction(BankTransaction):
+    category: TransactionCategory
+    classification_reason: str
+
+
+class BankTransactionClassificationResponse(BaseModel):
+    application_id: int
+    document_id: int
+    transactions: list[ClassifiedBankTransaction]
 
 
 class BankStatementExtraction(BaseModel):

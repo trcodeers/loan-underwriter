@@ -331,6 +331,8 @@ The verification uses deterministic Python logic and does not call an LLM or mak
 
 The bank-statement `total_credits` and `total_debits` findings compare the sums of transaction rows against the totals explicitly extracted from the statement summary. The extraction prompt does not ask the model to calculate statement totals. If those summary totals are not printed or extracted, the corresponding check is `needs_review`. To regenerate a bank-statement extraction in Swagger without re-uploading its PDF, call the analyze-bank-statement endpoint again with `force_refresh=true`; cached records predating the summary-total fields are refreshed automatically.
 
+To classify the extracted rows deterministically, call `POST /api/v1/applications/{application_id}/documents/{document_id}/classify-transactions` in Swagger after extracting the bank statement. The response includes each original transaction with a category and classification reason. It does not update or duplicate the stored extraction; repeating the request returns a fresh classification of the same source rows. Ambiguous credits and debits are returned as `other_uncertain`.
+
 ## 12. Planned AI Investigation Workflow
 
 The following is the intended AI workflow. It is a roadmap, not a claim that all these capabilities are already implemented.
