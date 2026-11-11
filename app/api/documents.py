@@ -38,10 +38,15 @@ from app.schemas.bank_statement import (
     BankStatementExtractionResponse,
     ClassifiedBankTransaction,
 )
+from app.schemas.loan_statement import LoanStatementExtractionResponse
 from app.services.bank_statement_extraction import (
     extract_bank_statement_data,
 )
+from app.services.loan_statement_extraction import (
+    extract_loan_statement_data,
+)
 from app.services.bank_transaction_classification import (
+    CLASSIFICATION_RULE_VERSION,
     classify_bank_statement_transactions,
 )
 
@@ -362,10 +367,62 @@ def analyze_bank_statement(
     db: Session = Depends(get_db),
 ):
     application = db.get(LoanApplication, application_id)
-
     if not application:
         raise HTTPException(404, "Loan application not found")
 
+    return _analyze_bank_statement_document(
+        application_id,
+        document_id,
+        db,
+    )
+
+
+@router.post(
+    "/{application_id}/analyze-bank-statement",
+    response_model=BankStatementExtractionResponse,
+)
+def analyze_application_bank_statement(
+    application_id: int,
+    document_id: int | None = None,
+    db: Session = Depends(get_db),
+):
+    application = db.get(LoanApplication, application_id)
+    if not application:
+        raise HTTPException(404, "Loan application not found")
+
+    if document_id is None:
+        documents = db.scalars(
+            select(Document)
+            .where(
+                Document.application_id == application_id,
+                Document.document_type == "bank_statement",
+            )
+            .order_by(Document.id)
+        ).all()
+        if not documents:
+            raise HTTPException(
+                404,
+                "No bank statement document found for this application",
+            )
+        if len(documents) > 1:
+            raise HTTPException(
+                409,
+                "Multiple bank statement documents found; specify document_id",
+            )
+        document_id = documents[0].id
+
+    return _analyze_bank_statement_document(
+        application_id,
+        document_id,
+        db,
+    )
+
+
+def _analyze_bank_statement_document(
+    application_id: int,
+    document_id: int,
+    db: Session,
+):
     statement = select(Document).where(
         Document.id == document_id,
         Document.application_id == application_id,
@@ -432,8 +489,13 @@ def analyze_bank_statement(
         )
     )
     classified_transactions: list[ClassifiedBankTransaction] | None = None
+    has_current_rules = (
+        classification_extraction is not None
+        and classification_extraction.extracted_data.get("rule_version")
+        == CLASSIFICATION_RULE_VERSION
+    )
 
-    if classification_extraction:
+    if classification_extraction and has_current_rules:
         saved_classifications = classification_extraction.extracted_data.get(
             "transactions"
         )
@@ -471,6 +533,7 @@ def analyze_bank_statement(
             bank_statement
         )
         classification_data = {
+            "rule_version": CLASSIFICATION_RULE_VERSION,
             "transactions": [
                 {
                     "transaction_index": index,
@@ -497,4 +560,79 @@ def analyze_bank_statement(
         original_filename=document.original_filename,
         **bank_statement.model_dump(exclude={"transactions"}),
         transactions=classified_transactions,
+    )
+
+
+@router.post(
+    "/{application_id}/documents/{document_id}/analyze-loan-statement",
+    response_model=LoanStatementExtractionResponse,
+)
+def analyze_loan_statement(
+    application_id: int,
+    document_id: int,
+    db: Session = Depends(get_db),
+):
+    application = db.get(LoanApplication, application_id)
+    if not application:
+        raise HTTPException(404, "Loan application not found")
+
+    document = db.scalar(
+        select(Document).where(
+            Document.id == document_id,
+            Document.application_id == application_id,
+        )
+    )
+    if not document:
+        raise HTTPException(404, "Document not found")
+
+    if document.document_type != "existing_loan_statement":
+        raise HTTPException(400, "Document is not an existing loan statement")
+
+    extraction = db.scalar(
+        select(DocumentExtraction).where(
+            DocumentExtraction.document_id == document_id,
+            DocumentExtraction.extraction_type == "loan_statement",
+        )
+    )
+    if extraction:
+        loan_statement = LoanStatementExtraction.model_validate(
+            extraction.extracted_data
+        )
+    else:
+        try:
+            pdf_result = extract_pdf_text(document.storage_path)
+        except (FileNotFoundError, ValueError) as exc:
+            raise HTTPException(
+                422,
+                "Unable to read text from the PDF document",
+            ) from exc
+
+        if not pdf_result["has_extractable_text"]:
+            raise HTTPException(422, "No readable text found in PDF")
+
+        try:
+            loan_statement = extract_loan_statement_data(
+                pdf_result["extracted_text"]
+            )
+        except Exception as exc:
+            logger.exception("Loan statement extraction failed")
+            raise HTTPException(
+                502,
+                "Loan statement extraction failed",
+            ) from exc
+
+        extraction = DocumentExtraction(
+            document_id=document.id,
+            extraction_type="loan_statement",
+            extracted_data=loan_statement.model_dump(mode="json"),
+        )
+        db.add(extraction)
+        db.commit()
+        db.refresh(extraction)
+
+    return LoanStatementExtractionResponse(
+        document_id=document.id,
+        application_id=document.application_id,
+        original_filename=document.original_filename,
+        **loan_statement.model_dump(),
     )

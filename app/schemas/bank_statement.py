@@ -26,6 +26,7 @@ TransactionCategory = Literal[
     "cash_withdrawal",
     "internal_transfer",
     "refund_or_reversal",
+    "reimbursement",
     "other_uncertain",
 ]
 

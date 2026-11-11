@@ -7,6 +7,8 @@ from app.schemas.bank_statement import (
     TransactionCategory,
 )
 
+CLASSIFICATION_RULE_VERSION = 2
+
 
 def classify_bank_statement_transactions(
     bank_statement: BankStatementExtraction,
@@ -54,23 +56,18 @@ def _classify_description(
             "Description explicitly indicates a refund, reversal, or chargeback.",
         )
 
-    if _contains_any(
-        description,
-        (
-            "internal transfer",
-            "own account",
-            "self transfer",
-            "between accounts",
-            "account sweep",
-            "sweep transfer",
-        ),
-    ):
+    if _is_internal_transfer(description):
         return (
             "internal_transfer",
-            "Description explicitly indicates a transfer between the customer's accounts.",
+            "Description explicitly identifies a transfer to or from the customer's own account.",
         )
 
     if is_credit:
+        if _contains_any(description, ("reimbursement", "reimburse")):
+            return (
+                "reimbursement",
+                "Credit description identifies a reimbursement; it is not treated as regular earned income.",
+            )
         if _contains_any(
             description,
             ("salary", "payroll", "wages", "monthly pay"),
@@ -94,6 +91,11 @@ def _classify_description(
             return (
                 "other_income",
                 "Credit description explicitly identifies a non-salary income source.",
+            )
+        if _contains_any(description, ("consulting", "consultancy")):
+            return (
+                "other_income",
+                "Description identifies consulting income, but does not establish that it is recurring.",
             )
         return (
             "other_uncertain",
@@ -126,13 +128,33 @@ def _classify_description(
             "gas bill",
             "utility bill",
             "broadband",
+            "broadband payment",
             "internet bill",
+            "internet payment",
+            "home internet",
             "mobile bill",
+            "mobile postpaid",
+            "mobile post-paid",
+            "postpaid",
+            "post-paid",
+            "mobile recharge",
+            "telecom",
             "telephone bill",
             "telecom bill",
+            "bill payment mobile",
+            "bill payment internet",
+            "bill payment telecom",
         ),
     ):
         return "utilities", "Debit description identifies a utility or telecom bill."
+    if (
+        _contains_any(description, ("mobile", "internet", "broadband", "telecom"))
+        and _contains_any(
+            description,
+            ("bill payment", "bill", "payment", "postpaid", "post-paid", "recharge"),
+        )
+    ):
+        return "utilities", "Debit description identifies a mobile or internet service payment."
     if _contains_any(
         description,
         ("grocery", "groceries", "supermarket", "super market", "food mart"),
@@ -191,3 +213,22 @@ def _contains_any(description: str, keywords: tuple[str, ...]) -> bool:
         is not None
         for keyword in keywords
     )
+
+
+def _is_internal_transfer(description: str) -> bool:
+    has_transfer = _contains_any(
+        description,
+        ("transfer", "sweep"),
+    )
+    identifies_own_account = _contains_any(
+        description,
+        (
+            "own account",
+            "own savings",
+            "own current account",
+            "self transfer",
+            "between own accounts",
+            "account sweep",
+        ),
+    )
+    return has_transfer and identifies_own_account

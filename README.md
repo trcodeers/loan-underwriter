@@ -324,6 +324,7 @@ Use the existing document extraction endpoints in Swagger (`/docs`) to extract a
 
 - `POST /api/v1/applications/{application_id}/documents/{document_id}/analyze-payslip`
 - `POST /api/v1/applications/{application_id}/documents/{document_id}/analyze-bank-statement`
+- `POST /api/v1/applications/{application_id}/analyze-bank-statement?document_id={document_id}` (document_id is optional)
 
 Then call `POST /api/v1/applications/{application_id}/verify-finances`. The response compares the saved extractions, reports salary and name findings, and checks transaction totals, statement balance reconciliation, and available running balances. It uses the most recently uploaded document of each type that has a matching saved extraction. Missing extraction data returns `422`; an unknown application returns `404`.
 
@@ -332,6 +333,10 @@ The verification uses deterministic Python logic and does not call an LLM or mak
 The bank-statement `total_credits` and `total_debits` findings compare the sums of transaction rows against the totals explicitly extracted from the statement summary. The extraction prompt does not ask the model to calculate statement totals. If those summary totals are not printed or extracted, the corresponding check is `needs_review`.
 
 The analyze-bank-statement endpoint also classifies every transaction deterministically and returns each original transaction with a category and classification reason. When a saved extraction exists, the endpoint reuses its structured JSON and does not reopen the PDF or call the LLM again. Classification is saved separately as the `bank_transaction_classification` extraction type, keyed by zero-based transaction index; it does not modify the original extraction. Existing classification records are reused when complete or updated in place when they need regeneration. Ambiguous credits and debits are returned as `other_uncertain`.
+
+The application-level bank-statement endpoint automatically selects the only bank statement uploaded for that application. If multiple statements exist, Swagger returns `409` until `document_id` is specified; if none exist, it returns `404`. In `/docs`, call `POST /api/v1/applications/{application_id}/analyze-bank-statement` first without `document_id` to try automatic selection, then again with the optional query parameter populated to select a specific statement. The existing document-level endpoint remains available.
+
+For an uploaded `existing_loan_statement` document, call `POST /api/v1/applications/{application_id}/documents/{document_id}/analyze-loan-statement` in Swagger. The endpoint extracts explicitly stated loan and repayment details, caches the result as `loan_statement`, and returns the cached extraction on repeated requests.
 
 ## 12. Planned AI Investigation Workflow
 
