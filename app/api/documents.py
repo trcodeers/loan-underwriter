@@ -38,7 +38,10 @@ from app.schemas.bank_statement import (
     BankStatementExtractionResponse,
     ClassifiedBankTransaction,
 )
-from app.schemas.loan_statement import LoanStatementExtractionResponse
+from app.schemas.loan_statement import (
+    LoanStatementExtraction,
+    LoanStatementExtractionResponse,
+)
 from app.services.bank_statement_extraction import (
     extract_bank_statement_data,
 )
