@@ -1,12 +1,54 @@
 import re
 from decimal import Decimal
+from typing import Annotated
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, BeforeValidator, Field, field_validator
+
+_PLAIN_AMOUNT_PATTERN = re.compile(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)")
+_WESTERN_AMOUNT_PATTERN = re.compile(
+    r"[+-]?\d{1,3}(?:,\d{3})+(?:\.\d+)?"
+)
+_INDIAN_AMOUNT_PATTERN = re.compile(
+    r"[+-]?\d{1,2}(?:,\d{2})+,\d{3}(?:\.\d+)?"
+)
+
+
+def normalize_financial_decimal(value: object) -> object:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        normalized = value.strip()
+        if not normalized:
+            return None
+
+        normalized = re.sub(r"^INR\s*", "", normalized, flags=re.IGNORECASE)
+        normalized = re.sub(r"^₹\s*", "", normalized)
+        valid_format = any(
+            pattern.fullmatch(normalized)
+            for pattern in (
+                _PLAIN_AMOUNT_PATTERN,
+                _WESTERN_AMOUNT_PATTERN,
+                _INDIAN_AMOUNT_PATTERN,
+            )
+        )
+        if not valid_format:
+            raise ValueError(
+                "Financial amount must be a numeric value, optionally "
+                "formatted with INR or ₹ and valid digit-grouping commas."
+            )
+        return normalized.replace(",", "")
+    return value
+
+
+FinancialDecimal = Annotated[
+    Decimal | None,
+    BeforeValidator(normalize_financial_decimal),
+]
 
 
 class LoanRepayment(BaseModel):
     payment_date: str | None = None
-    amount: Decimal | None = None
+    amount: FinancialDecimal = None
     payment_status: str | None = None
 
 
@@ -18,21 +60,21 @@ class LoanStatementExtraction(BaseModel):
     statement_period_start: str | None = None
     statement_period_end: str | None = None
 
-    original_loan_amount: Decimal | None = None
-    total_disbursed_amount: Decimal | None = None
-    outstanding_principal: Decimal | None = None
-    emi_amount: Decimal | None = None
-    interest_rate: Decimal | None = None
+    original_loan_amount: FinancialDecimal = None
+    total_disbursed_amount: FinancialDecimal = None
+    outstanding_principal: FinancialDecimal = None
+    emi_amount: FinancialDecimal = None
+    interest_rate: FinancialDecimal = None
     interest_rate_type: str | None = None
     original_loan_tenure_months: int | None = None
     remaining_tenure_months: int | None = None
 
     instalments_paid: int | None = None
     next_emi_due_date: str | None = None
-    overdue_amount: Decimal | None = None
+    overdue_amount: FinancialDecimal = None
     days_past_due: int | None = None
     repayment_history: list[LoanRepayment] = Field(default_factory=list)
-    penalties_or_additional_charges: Decimal | None = None
+    penalties_or_additional_charges: FinancialDecimal = None
     currency: str | None = None
 
     missing_fields: list[str] = Field(default_factory=list)

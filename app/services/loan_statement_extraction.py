@@ -19,11 +19,14 @@ Rules:
    missing_fields.
 4. Extract repayment history only for payments explicitly listed in the
    document, preserving their dates, amounts, and stated statuses.
-5. Return only the last four digits of the loan account number where possible.
+5. Return financial numeric values as plain numbers without thousands
+   separators, currency symbols, or currency prefixes. Return the currency
+   separately in the currency field.
+6. Return only the last four digits of the loan account number where possible.
    Never return a full account number or include it in evidence.
-6. Include short exact supporting excerpts for extracted values where
+7. Include short exact supporting excerpts for extracted values where
    possible. Do not include complete account numbers in evidence.
-7. Preserve the document's stated interest rate and rate type; do not infer
+8. Preserve the document's stated interest rate and rate type; do not infer
    fixed or floating from other information.
 """
 
