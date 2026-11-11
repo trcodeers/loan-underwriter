@@ -4,11 +4,11 @@ from fastapi import (
     File,
     Form,
     HTTPException,
-    Query,
     UploadFile,
     status,
 )
 from pathlib import Path
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
@@ -36,7 +36,7 @@ from app.services.payslip_extraction import extract_payslip_data
 from app.schemas.bank_statement import (
     BankStatementExtraction,
     BankStatementExtractionResponse,
-    BankTransactionClassificationResponse,
+    ClassifiedBankTransaction,
 )
 from app.services.bank_statement_extraction import (
     extract_bank_statement_data,
@@ -359,13 +359,6 @@ def analyze_payslip(
 def analyze_bank_statement(
     application_id: int,
     document_id: int,
-    force_refresh: bool = Query(
-        default=False,
-        description=(
-            "Re-extract and replace the saved bank-statement extraction "
-            "without deleting the uploaded document."
-        ),
-    ),
     db: Session = Depends(get_db),
 ):
     application = db.get(LoanApplication, application_id)
@@ -391,115 +384,117 @@ def analyze_bank_statement(
     )
     existing_extraction = db.scalar(statement)
 
-    is_legacy_extraction = (
-        existing_extraction is not None
-        and (
-            "statement_total_credits"
-            not in existing_extraction.extracted_data
-            or "statement_total_debits"
-            not in existing_extraction.extracted_data
-        )
-    )
-    if existing_extraction and not force_refresh and not is_legacy_extraction:
-        return BankStatementExtractionResponse(
-            document_id=document.id,
-            application_id=document.application_id,
-            original_filename=document.original_filename,
-            **existing_extraction.extracted_data,
-        )
-
-    try:
-        pdf_result = extract_pdf_text(document.storage_path)
-    except (FileNotFoundError, ValueError) as exc:
-        raise HTTPException(
-            422,
-            "Unable to read text from the PDF document",
-        ) from exc
-
-    if not pdf_result["has_extractable_text"]:
-        raise HTTPException(422, "No readable text found in PDF")
-
-    try:
-        result = extract_bank_statement_data(pdf_result["extracted_text"])
-        validated_result = BankStatementExtraction.model_validate(result)
-        extracted_data = validated_result.model_dump(mode="json")
-    except Exception as exc:
-        logger.error(
-            "Bank statement extraction failed (%s)",
-            type(exc).__name__,
-            stack_info=True,
-        )
-        raise HTTPException(
-            502,
-            "Bank statement AI extraction failed",
-        ) from exc
-
     if existing_extraction:
-        existing_extraction.extracted_data = extracted_data
+        bank_statement = BankStatementExtraction.model_validate(
+            existing_extraction.extracted_data
+        )
     else:
+        try:
+            pdf_result = extract_pdf_text(document.storage_path)
+        except (FileNotFoundError, ValueError) as exc:
+            raise HTTPException(
+                422,
+                "Unable to read text from the PDF document",
+            ) from exc
+
+        if not pdf_result["has_extractable_text"]:
+            raise HTTPException(422, "No readable text found in PDF")
+
+        try:
+            result = extract_bank_statement_data(pdf_result["extracted_text"])
+            bank_statement = BankStatementExtraction.model_validate(result)
+        except Exception as exc:
+            logger.error(
+                "Bank statement extraction failed (%s)",
+                type(exc).__name__,
+                stack_info=True,
+            )
+            raise HTTPException(
+                502,
+                "Bank statement AI extraction failed",
+            ) from exc
+
+        extracted_data = bank_statement.model_dump(mode="json")
         extraction = DocumentExtraction(
             document_id=document.id,
             extraction_type="bank_statement",
             extracted_data=extracted_data,
         )
         db.add(extraction)
-    db.commit()
-    if existing_extraction:
-        db.refresh(existing_extraction)
-    else:
+        db.commit()
         db.refresh(extraction)
+
+    classification_extraction = db.scalar(
+        select(DocumentExtraction).where(
+            DocumentExtraction.document_id == document_id,
+            DocumentExtraction.extraction_type
+            == "bank_transaction_classification",
+        )
+    )
+    classified_transactions: list[ClassifiedBankTransaction] | None = None
+
+    if classification_extraction:
+        saved_classifications = classification_extraction.extracted_data.get(
+            "transactions"
+        )
+        if (
+            isinstance(saved_classifications, list)
+            and len(saved_classifications) == len(bank_statement.transactions)
+            and all(
+                isinstance(item, dict)
+                and type(item.get("transaction_index")) is int
+                and item["transaction_index"] == index
+                for index, item in enumerate(saved_classifications)
+            )
+        ):
+            try:
+                classified_transactions = [
+                    ClassifiedBankTransaction.model_validate(
+                        {
+                            **transaction.model_dump(),
+                            "category": saved["category"],
+                            "classification_reason": saved[
+                                "classification_reason"
+                            ],
+                        }
+                    )
+                    for transaction, saved in zip(
+                        bank_statement.transactions,
+                        saved_classifications,
+                    )
+                ]
+            except (KeyError, TypeError, ValidationError):
+                classified_transactions = None
+
+    if classified_transactions is None:
+        classified_transactions = classify_bank_statement_transactions(
+            bank_statement
+        )
+        classification_data = {
+            "transactions": [
+                {
+                    "transaction_index": index,
+                    "category": transaction.category,
+                    "classification_reason": transaction.classification_reason,
+                }
+                for index, transaction in enumerate(classified_transactions)
+            ]
+        }
+        if classification_extraction:
+            classification_extraction.extracted_data = classification_data
+        else:
+            classification_extraction = DocumentExtraction(
+                document_id=document.id,
+                extraction_type="bank_transaction_classification",
+                extracted_data=classification_data,
+            )
+            db.add(classification_extraction)
+        db.commit()
 
     return BankStatementExtractionResponse(
         document_id=document.id,
         application_id=document.application_id,
         original_filename=document.original_filename,
-        **extracted_data,
+        **bank_statement.model_dump(exclude={"transactions"}),
+        transactions=classified_transactions,
     )
-
-
-@router.post(
-    "/{application_id}/documents/{document_id}/classify-transactions",
-    response_model=BankTransactionClassificationResponse,
-)
-def classify_bank_statement(
-    application_id: int,
-    document_id: int,
-    db: Session = Depends(get_db),
-):
-    application = db.get(LoanApplication, application_id)
-    if not application:
-        raise HTTPException(404, "Loan application not found")
-
-    document = db.scalar(
-        select(Document).where(
-            Document.id == document_id,
-            Document.application_id == application_id,
-        )
-    )
-    if not document:
-        raise HTTPException(404, "Document not found")
-
-    if document.document_type != "bank_statement":
-        raise HTTPException(400, "Document is not a bank statement")
-
-    extraction = db.scalar(
-        select(DocumentExtraction).where(
-            DocumentExtraction.document_id == document_id,
-            DocumentExtraction.extraction_type == "bank_statement",
-        )
-    )
-    if not extraction:
-        raise HTTPException(
-            422,
-            "Bank statement extraction is unavailable; analyze the document first",
-        )
-
-    bank_statement = BankStatementExtraction.model_validate(
-        extraction.extracted_data
-    )
-    return BankTransactionClassificationResponse(
-        application_id=application_id,
-        document_id=document_id,
-        transactions=classify_bank_statement_transactions(bank_statement),
-    )
-    

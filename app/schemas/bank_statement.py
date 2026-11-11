@@ -35,12 +35,6 @@ class ClassifiedBankTransaction(BankTransaction):
     classification_reason: str
 
 
-class BankTransactionClassificationResponse(BaseModel):
-    application_id: int
-    document_id: int
-    transactions: list[ClassifiedBankTransaction]
-
-
 class BankStatementExtraction(BaseModel):
     statement_total_credits: Decimal | None = Field(
         default=None,
@@ -84,3 +78,4 @@ class BankStatementExtractionResponse(BankStatementExtraction):
     document_id: int
     application_id: int
     original_filename: str
+    transactions: list[ClassifiedBankTransaction] = Field(default_factory=list)
