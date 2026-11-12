@@ -5,8 +5,7 @@ from sqlalchemy import engine_from_config, pool
 
 from app.config import settings
 from app.db.database import Base
-from app.models import application, document  # Registers LoanApplication and Document models
-from app.models import application, document, extraction
+from app.models import application, document, extraction, financial_analysis
 
 config = context.config
 

@@ -15,6 +15,11 @@ class LoanApplication(Base):
         back_populates="application",
         cascade="all, delete-orphan",
     )
+    financial_analyses = relationship(
+        "FinancialAnalysis",
+        back_populates="application",
+        cascade="all, delete-orphan",
+    )
     
     id: Mapped[int] = mapped_column(
         Integer,

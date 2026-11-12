@@ -12,6 +12,8 @@ from fastapi import HTTPException
 from app.schemas.application import ApplicationResponse
 
 from app.schemas.verification import FinancialVerificationResponse
+from app.models.financial_analysis import FinancialAnalysis
+from app.schemas.financial_analysis import FinancialAnalysisResponse
 from app.services.financial_verification import (
     FinancialVerificationDataUnavailable,
     verify_application_finances,
@@ -66,6 +68,47 @@ def get_application(
         )
 
     return application
+
+
+@router.get(
+    "/{application_id}/financial-analyses/latest",
+    response_model=FinancialAnalysisResponse,
+)
+def get_latest_financial_analysis(
+    application_id: int,
+    db: Session = Depends(get_db),
+):
+    application = db.get(LoanApplication, application_id)
+    if not application:
+        raise HTTPException(
+            status_code=404,
+            detail="Loan application not found",
+        )
+
+    analysis = db.scalar(
+        select(FinancialAnalysis)
+        .where(FinancialAnalysis.application_id == application_id)
+        .order_by(
+            FinancialAnalysis.created_at.desc(),
+            FinancialAnalysis.id.desc(),
+        )
+        .limit(1)
+    )
+    if not analysis:
+        raise HTTPException(
+            status_code=404,
+            detail="No financial analysis found for this application",
+        )
+
+    return FinancialAnalysisResponse(
+        analysis_id=analysis.id,
+        application_id=analysis.application_id,
+        source_document_ids=analysis.source_document_ids,
+        calculation_inputs=analysis.calculation_inputs,
+        calculation_results=analysis.calculation_results,
+        calculation_version=analysis.calculation_version,
+        created_at=analysis.created_at,
+    )
 
 
 @router.post(

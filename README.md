@@ -338,6 +338,8 @@ The application-level bank-statement endpoint automatically selects the only ban
 
 For an uploaded `existing_loan_statement` document, call `POST /api/v1/applications/{application_id}/documents/{document_id}/analyze-loan-statement` in Swagger. The endpoint extracts explicitly stated loan and repayment details, caches the result as `loan_statement`, and returns the cached extraction on repeated requests.
 
+Financial calculation runs are stored separately from document extractions in `financial_analyses`. Apply the schema with `uv run alembic upgrade head`. The calculation service can persist a completed run with `save_financial_analysis`; Decimal values are stored as decimal strings in JSON to preserve precision. Retrieve the latest saved run with `GET /api/v1/applications/{application_id}/financial-analyses/latest`. A financial-calculation endpoint is not yet implemented, so this release provides persistence and retrieval but does not create analysis runs itself.
+
 ## 12. Planned AI Investigation Workflow
 
 The following is the intended AI workflow. It is a roadmap, not a claim that all these capabilities are already implemented.
