@@ -185,6 +185,12 @@ def _calculate(
             "averages cannot be calculated."
         )
         missing_inputs.append("complete bank statement period dates")
+    elif month_count == 1:
+        warnings.append(
+            "Only one month of bank statement data is available. Monthly "
+            "income and expense patterns may not represent the applicant's "
+            "long-term financial position."
+        )
 
     tx_rows, classified_rows = _collect_transactions(
         bank_statements,
