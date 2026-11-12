@@ -1,7 +1,15 @@
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class FinancialCalculationRequest(BaseModel):
+    max_foir_percent: Decimal | None = Field(default=None, gt=0, le=100)
+    proposed_annual_interest_rate: Decimal | None = Field(default=None, ge=0)
+    proposed_tenure_months: int | None = Field(default=None, gt=0)
+    minimum_monthly_reserve: Decimal | None = Field(default=None, ge=0)
 
 
 class FinancialAnalysisResponse(BaseModel):

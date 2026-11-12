@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Body, Depends, Response, status
 from sqlalchemy.orm import Session
 
 from app.db.database import get_db
@@ -13,7 +13,14 @@ from app.schemas.application import ApplicationResponse
 
 from app.schemas.verification import FinancialVerificationResponse
 from app.models.financial_analysis import FinancialAnalysis
-from app.schemas.financial_analysis import FinancialAnalysisResponse
+from app.schemas.financial_analysis import (
+    FinancialAnalysisResponse,
+    FinancialCalculationRequest,
+)
+from app.services.financial_calculation import (
+    FinancialCalculationDataUnavailable,
+    calculate_and_save_financial_analysis,
+)
 from app.services.financial_verification import (
     FinancialVerificationDataUnavailable,
     verify_application_finances,
@@ -99,6 +106,46 @@ def get_latest_financial_analysis(
             status_code=404,
             detail="No financial analysis found for this application",
         )
+
+    return FinancialAnalysisResponse(
+        analysis_id=analysis.id,
+        application_id=analysis.application_id,
+        source_document_ids=analysis.source_document_ids,
+        calculation_inputs=analysis.calculation_inputs,
+        calculation_results=analysis.calculation_results,
+        calculation_version=analysis.calculation_version,
+        created_at=analysis.created_at,
+    )
+
+
+@router.post(
+    "/{application_id}/calculate-financials",
+    response_model=FinancialAnalysisResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def calculate_financials(
+    application_id: int,
+    payload: FinancialCalculationRequest = Body(default={}),
+    db: Session = Depends(get_db),
+):
+    application = db.get(LoanApplication, application_id)
+    if not application:
+        raise HTTPException(
+            status_code=404,
+            detail="Loan application not found",
+        )
+
+    try:
+        analysis = calculate_and_save_financial_analysis(
+            db=db,
+            application=application,
+            request=payload,
+        )
+    except FinancialCalculationDataUnavailable as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=str(exc),
+        ) from exc
 
     return FinancialAnalysisResponse(
         analysis_id=analysis.id,
