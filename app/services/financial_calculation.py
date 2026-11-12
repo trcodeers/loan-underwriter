@@ -750,6 +750,7 @@ def _parse_date(value: str | None) -> date | None:
         "%Y-%m-%d",
         "%d/%m/%Y",
         "%d-%m-%Y",
+        "%d-%b-%Y",
         "%d %B %Y",
         "%d %b %Y",
         "%B %Y",
